@@ -144,15 +144,34 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                 console.error('Webhook trigger failed:', webhookErr)
             }
 
-            // Polling logic: Wait for AI to complete
+            // Polling logic: Wait for AI to complete (no timeout — runs until content_from_ai is true)
             let isReady = false
             let pollingAttempts = 0
-            const maxAttempts = 60 // 3 minutes max
 
-            addStatus('Polling Supabase for AI response...', 'info')
-            while (!isReady && pollingAttempts < maxAttempts) {
+            const aiProgressMessages = [
+                { text: 'AI is reading your sources…', type: 'info' },
+                { text: 'Researching top-ranking pages for this topic…', type: 'info' },
+                { text: 'Analyzing SERP results and competitors…', type: 'info' },
+                { text: 'Identifying high-value keywords…', type: 'info' },
+                { text: 'Mapping semantic clusters and topic gaps…', type: 'info' },
+                { text: 'Crafting the blog outline…', type: 'info' },
+                { text: 'Writing the introduction…', type: 'info' },
+                { text: 'Expanding each section with depth…', type: 'info' },
+                { text: 'Weaving in LSI keywords naturally…', type: 'info' },
+                { text: 'Optimizing heading structure for SEO…', type: 'info' },
+                { text: 'Adding supporting facts and statistics…', type: 'info' },
+                { text: 'Writing the conclusion and CTA…', type: 'info' },
+                { text: 'Running quality and readability checks…', type: 'info' },
+                { text: 'Fine-tuning tone and brand voice…', type: 'info' },
+                { text: 'Almost there — finalizing the content…', type: 'info' },
+                { text: 'Still working — great content takes time…', type: 'info' },
+            ]
+
+            addStatus('AI has started working on your blog…', 'info')
+
+            while (!isReady) {
                 pollingAttempts++
-                await new Promise(resolve => setTimeout(resolve, 3000))
+                await new Promise(resolve => setTimeout(resolve, 10000)) // check every 10s
 
                 const { data: pollData, error: pollError } = await supabase
                     .from('blogs')
@@ -161,31 +180,31 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                     .single()
 
                 if (pollError) {
-                    addStatus(`Poll #${pollingAttempts} error: ${pollError.message}`, 'warn')
+                    addStatus('Checking status… (retrying)', 'warn')
                     continue
                 }
 
-                addStatus(`Poll #${pollingAttempts} — content_from_ai: ${pollData.content_from_ai ? 'true ✓' : 'false'}`, pollData.content_from_ai ? 'success' : 'info')
-
                 if (pollData.content_from_ai) {
                     isReady = true
-                    addStatus('Content ready! Rendering blog...', 'success')
+                    addStatus('Blog content is ready!', 'success')
                     setGeneratedBlog(pollData)
+                } else {
+                    // Show a rotating human-friendly message
+                    const msgIndex = (pollingAttempts - 1) % aiProgressMessages.length
+                    const msg = aiProgressMessages[msgIndex]
+                    addStatus(msg.text, msg.type)
                 }
             }
 
-            if (!isReady) {
-                throw new Error('AI Generation timed out. Please check your project later.')
-            }
         } catch (err) {
             console.error('Generation flow failed:', err)
             const errorMsg = err.message || 'Unknown error'
             if (err.storageError) {
-                alert(`Supabase Storage Error: ${errorMsg}`)
+                addStatus(`Storage error: ${errorMsg}`, 'error')
             } else if (err.dbError) {
-                alert(`Supabase Database Error: ${errorMsg}`)
+                addStatus(`Database error: ${errorMsg}`, 'error')
             } else {
-                alert(`Generation failed: ${errorMsg}`)
+                addStatus(`Something went wrong: ${errorMsg}`, 'error')
             }
         } finally {
             setGenerating(false)
