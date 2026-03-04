@@ -45,7 +45,7 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
         }
     }
 
-    const WEBHOOK_URL = 'https://app.bivekshakya.com.np/webhook-test/6fc613cc-24c0-4e5a-a6e4-ebe1f18d3b5a'
+    const WEBHOOK_URL = import.meta.env.VITE_WEBHOOK_URL
 
     const handleGenerate = async (formData) => {
         setGenerating(true)
