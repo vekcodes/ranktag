@@ -12,6 +12,12 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
     const [generatedBlog, setGeneratedBlog] = useState(null)
     const [generating, setGenerating] = useState(false)
     const [loading, setLoading] = useState(false)
+    const [statusLog, setStatusLog] = useState([])
+
+    const addStatus = (text, type = 'info') => {
+        const time = new Date().toLocaleTimeString('en-US', { hour12: false })
+        setStatusLog(prev => [...prev, { text, type, time }])
+    }
 
     useEffect(() => {
         if (activeSession) {
@@ -50,9 +56,15 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
     const handleGenerate = async (formData) => {
         setGenerating(true)
         setGeneratedBlog(null)
+        setStatusLog([])
 
         try {
+            addStatus('Connected to Supabase', 'success')
+
             const storagePaths = []
+            if (formData.companyFiles.length > 0) {
+                addStatus(`Uploading ${formData.companyFiles.length} file(s) to Storage...`, 'info')
+            }
             for (const file of formData.companyFiles) {
                 const fileExt = file.name.split('.').pop()
                 const fileName = `${Math.random()}.${fileExt}`
@@ -63,9 +75,11 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                     .upload(filePath, file)
 
                 if (uploadError) {
+                    addStatus(`Upload failed: ${file.name}`, 'error')
                     uploadError.storageError = true
                     throw uploadError
                 }
+                addStatus(`Uploaded: ${file.name}`, 'success')
                 storagePaths.push(uploadData.path)
             }
 
@@ -84,6 +98,7 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                 word_count: Math.floor(Math.random() * 500) + 1200,
             }
 
+            addStatus('Creating blog record in database...', 'info')
             const { data: blogData, error: blogError } = await supabase
                 .from('blogs')
                 .insert([newBlogInput])
@@ -91,9 +106,11 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                 .single()
 
             if (blogError) {
+                addStatus(`Database error: ${blogError.message}`, 'error')
                 blogError.dbError = true
                 throw blogError
             }
+            addStatus(`Blog row created (ID: ${blogData.id.slice(0, 8)}…)`, 'success')
 
             await supabase
                 .from('sessions')
@@ -108,6 +125,7 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
             }
 
             try {
+                addStatus('Firing webhook to AI pipeline...', 'info')
                 const params = new URLSearchParams()
                 params.append('id', blogData.id)
                 params.append('title', blogData.title)
@@ -120,7 +138,9 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                     method: 'GET',
                     mode: 'no-cors',
                 })
+                addStatus('Webhook fired — AI is generating content', 'success')
             } catch (webhookErr) {
+                addStatus('Webhook call failed (non-fatal)', 'warn')
                 console.error('Webhook trigger failed:', webhookErr)
             }
 
@@ -129,9 +149,10 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
             let pollingAttempts = 0
             const maxAttempts = 60 // 3 minutes max
 
+            addStatus('Polling Supabase for AI response...', 'info')
             while (!isReady && pollingAttempts < maxAttempts) {
                 pollingAttempts++
-                await new Promise(resolve => setTimeout(resolve, 3000)) // 3s delay
+                await new Promise(resolve => setTimeout(resolve, 3000))
 
                 const { data: pollData, error: pollError } = await supabase
                     .from('blogs')
@@ -140,12 +161,15 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                     .single()
 
                 if (pollError) {
-                    console.error('Polling error:', pollError)
+                    addStatus(`Poll #${pollingAttempts} error: ${pollError.message}`, 'warn')
                     continue
                 }
 
+                addStatus(`Poll #${pollingAttempts} — content_from_ai: ${pollData.content_from_ai ? 'true ✓' : 'false'}`, pollData.content_from_ai ? 'success' : 'info')
+
                 if (pollData.content_from_ai) {
                     isReady = true
+                    addStatus('Content ready! Rendering blog...', 'success')
                     setGeneratedBlog(pollData)
                 }
             }
@@ -222,7 +246,7 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                         <BlogOutput blog={generatedBlog} />
                     </div>
                 ) : generating ? (
-                    <GeneratingView />
+                    <GeneratingView statusLog={statusLog} />
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-12">
                         {/* Bento Main Item: Input Pipeline */}
@@ -297,49 +321,87 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
     )
 }
 
-function GeneratingView() {
+const STATUS_STYLES = {
+    success: { dot: 'bg-emerald-500', text: 'text-emerald-400', icon: '✓' },
+    info: { dot: 'bg-primary', text: 'text-muted-foreground', icon: '›' },
+    warn: { dot: 'bg-yellow-500', text: 'text-yellow-400', icon: '⚠' },
+    error: { dot: 'bg-red-500', text: 'text-red-400', icon: '✗' },
+}
+
+function GeneratingView({ statusLog = [] }) {
+    const lastMsg = statusLog[statusLog.length - 1]
+
     return (
-        <div className="flex-1 flex items-center justify-center min-h-[500px] animate-in fade-in duration-500">
-            <div className="max-w-md w-full p-10 rounded-3xl border bg-card shadow-2xl flex flex-col items-center text-center gap-8">
-                <div className="relative">
-                    {/* Outer ring */}
-                    <div className="w-20 h-20 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-                    {/* Inner pulsing icon */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <Hash size={26} className="text-primary animate-pulse" />
-                    </div>
-                    {/* Glow */}
-                    <div className="absolute inset-0 rounded-full bg-primary/10 blur-xl animate-pulse" />
-                </div>
-
-                <div className="space-y-2">
-                    <h3 className="text-2xl font-black tracking-tight text-foreground">Architecting Content</h3>
-                    <p className="text-sm text-muted-foreground font-medium leading-relaxed">
-                        Ranktag AI is crafting your blog. This may take a minute—please keep this window open.
-                    </p>
-                </div>
-
-                <div className="w-full space-y-3">
-                    {[
-                        { label: 'Uploading Sources', icon: '📄' },
-                        { label: 'Analyzing SERP Signals', icon: '📡' },
-                        { label: 'Weighting Semantic Clusters', icon: '🧠' },
-                        { label: 'Waiting for AI Response', icon: '⏳' },
-                    ].map((item, i) => (
-                        <div
-                            key={i}
-                            className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-widest text-muted-foreground bg-muted/30 px-4 py-3 rounded-xl border border-transparent animate-in fade-in slide-in-from-left-2"
-                            style={{ animationDelay: `${i * 0.15}s` }}
-                        >
-                            <span className="text-base">{item.icon}</span>
-                            <span className="flex-1 text-left">{item.label}</span>
-                            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+        <div className="flex-1 flex items-center justify-center min-h-[500px] p-6 animate-in fade-in duration-500">
+            <div className="max-w-xl w-full flex flex-col gap-8">
+                {/* Header */}
+                <div className="flex items-center gap-5">
+                    <div className="relative shrink-0">
+                        <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <Hash size={22} className="text-primary animate-pulse" />
                         </div>
-                    ))}
+                        <div className="absolute inset-0 rounded-full bg-primary/10 blur-xl animate-pulse" />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-black tracking-tight text-foreground">Architecting Content</h3>
+                        <p className="text-xs text-muted-foreground font-medium mt-1">
+                            {lastMsg ? lastMsg.text : 'Initializing pipeline…'}
+                        </p>
+                    </div>
                 </div>
 
-                <p className="text-[10px] text-muted-foreground/50 font-medium uppercase tracking-widest">
-                    Polling for completion • Checking every 3s
+                {/* Live log terminal */}
+                <div className="rounded-2xl border border-border/50 bg-muted/20 overflow-hidden">
+                    {/* Terminal title bar */}
+                    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/30">
+                        <div className="flex gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
+                            <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/60" />
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/60" />
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 ml-2">
+                            Supabase Live Log
+                        </span>
+                        <div className="ml-auto flex items-center gap-1.5">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest">Connected</span>
+                        </div>
+                    </div>
+
+                    {/* Log entries */}
+                    <div className="p-4 space-y-2 min-h-[180px] max-h-[280px] overflow-y-auto font-mono">
+                        {statusLog.length === 0 ? (
+                            <div className="flex items-center gap-2 text-[11px] text-muted-foreground/40">
+                                <span className="animate-pulse">_</span>
+                                <span>Waiting for pipeline to start…</span>
+                            </div>
+                        ) : (
+                            statusLog.map((entry, i) => {
+                                const s = STATUS_STYLES[entry.type] || STATUS_STYLES.info
+                                const isLast = i === statusLog.length - 1
+                                return (
+                                    <div
+                                        key={i}
+                                        className="flex items-start gap-2.5 text-[11px] animate-in fade-in slide-in-from-bottom-1 duration-300"
+                                    >
+                                        <span className="shrink-0 text-muted-foreground/40 tabular-nums pt-px">{entry.time}</span>
+                                        <span className={`shrink-0 font-bold pt-px ${s.text}`}>{s.icon}</span>
+                                        <span className={`leading-5 ${s.text} ${isLast ? 'font-semibold' : 'opacity-70'}`}>
+                                            {entry.text}
+                                        </span>
+                                        {isLast && (
+                                            <span className="shrink-0 inline-block w-1.5 h-3.5 bg-primary/70 animate-pulse ml-0.5 mt-px rounded-sm" />
+                                        )}
+                                    </div>
+                                )
+                            })
+                        )}
+                    </div>
+                </div>
+
+                <p className="text-center text-[10px] text-muted-foreground/40 font-medium uppercase tracking-widest">
+                    Polling every 3s • Please keep this window open
                 </p>
             </div>
         </div>
