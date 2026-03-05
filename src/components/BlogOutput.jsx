@@ -253,13 +253,73 @@ export default function BlogOutput({ blog }) {
                             <Sparkles size={14} className="text-primary/40" />
                         </div>
                         <div className="flex flex-wrap gap-2">
-                            {blog.keywords.map((kw, i) => (
+                            {blog.keywords && blog.keywords.length > 0 ? blog.keywords.map((kw, i) => (
                                 <Badge key={i} variant="secondary" className="bg-muted px-2.5 py-1 text-[10px] font-bold uppercase tracking-tighter text-muted-foreground/80 hover:bg-primary/5 hover:text-primary transition-all border-none">
                                     {kw}
                                 </Badge>
-                            ))}
+                            )) : <span className="text-[10px] text-muted-foreground/60 italic font-medium">No keywords provided</span>}
                         </div>
                     </Card>
+
+                    {/* SEO Intelligence Card */}
+                    {(blog.most_searched_query || (blog.most_searched_questions && blog.most_searched_questions.length > 0) || (blog.top3_ranked_websites && blog.top3_ranked_websites.length > 0) || blog.research_paper) && (
+                        <Card className="p-6 bento-card border-muted/50 space-y-5">
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Intelligence Data</h4>
+                                <Zap size={14} className="text-primary/40" />
+                            </div>
+
+                            {blog.most_searched_query && (
+                                <div className="space-y-2">
+                                    <h5 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Most Searched Query</h5>
+                                    <div className="text-xs font-bold text-foreground bg-primary/5 border border-primary/10 rounded-lg p-3 break-words">
+                                        {blog.most_searched_query}
+                                    </div>
+                                </div>
+                            )}
+
+                            {blog.most_searched_questions && blog.most_searched_questions.length > 0 && (
+                                <div className="space-y-2">
+                                    <h5 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Top Questions</h5>
+                                    <ul className="space-y-1.5 list-disc pl-4 marker:text-primary/50 text-[11px] font-medium text-muted-foreground leading-relaxed">
+                                        {blog.most_searched_questions.map((q, i) => (
+                                            <li key={i} className="break-words">{q}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {blog.top3_ranked_websites && blog.top3_ranked_websites.length > 0 && (
+                                <div className="space-y-2">
+                                    <h5 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Top Ranked Sites</h5>
+                                    <ul className="space-y-1.5 list-disc pl-4 marker:text-primary/50 text-[11px] font-medium">
+                                        {blog.top3_ranked_websites.map((url, i) => (
+                                            <li key={i}>
+                                                <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline hover:text-primary/80 break-all transition-colors">
+                                                    {url.replace(/^https?:\/\/(www\.)?/, '')}
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {blog.research_paper && (
+                                <div className="space-y-2 pt-2 border-t border-dashed">
+                                    <h5 className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-2">Reference Material</h5>
+                                    <a
+                                        href={blog.research_paper}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-primary bg-primary/10 hover:bg-primary/20 px-4 py-2.5 rounded-xl transition-colors w-full justify-center"
+                                    >
+                                        <FileText size={14} />
+                                        View Research Paper
+                                    </a>
+                                </div>
+                            )}
+                        </Card>
+                    )}
 
                     {/* Pro Action Box */}
                     <div className="p-6 rounded-3xl bg-primary/5 text-foreground space-y-4 shadow-xl shadow-black/5 border border-primary/10 relative overflow-hidden group">

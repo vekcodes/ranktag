@@ -96,6 +96,10 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                 keywords: ['SEO', 'content marketing', 'digital strategy', 'organic traffic'],
                 read_time: Math.floor(Math.random() * 5) + 5,
                 word_count: Math.floor(Math.random() * 500) + 1200,
+                most_searched_query: null,
+                most_searched_questions: [],
+                top3_ranked_websites: [],
+                research_paper: null,
             }
 
             addStatus('Creating blog record in database...', 'info')
