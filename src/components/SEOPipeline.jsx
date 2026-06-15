@@ -15,6 +15,7 @@ export default function SEOPipeline({ onGenerate, loading }) {
         companyName: '',
         companyFiles: [],
         companyUrl: '',
+        sitemapUrl: '',
     })
     const [fileError, setFileError] = useState('')
 
@@ -48,6 +49,7 @@ export default function SEOPipeline({ onGenerate, loading }) {
             title: formData.title,
             companyName: formData.companyName,
             companyUrl: formData.companyUrl,
+            sitemapUrl: formData.sitemapUrl,
             companyFiles: formData.companyFiles,
             timestamp: new Date().toISOString(),
         }
@@ -123,6 +125,19 @@ export default function SEOPipeline({ onGenerate, loading }) {
                                             onChange={e => setFormData(d => ({ ...d, companyUrl: e.target.value }))}
                                         />
                                     </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground ml-1">Sitemap URL <span className="normal-case font-medium opacity-50">(.xml)</span></label>
+                                    <div className="relative">
+                                        <BookOpen size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+                                        <input
+                                            className="w-full bg-muted/20 border-border/50 rounded-xl h-11 pl-10 pr-4 text-sm font-semibold focus:ring-1 focus:ring-primary/20 transition-all"
+                                            placeholder="https://example.com/sitemap.xml"
+                                            value={formData.sitemapUrl}
+                                            onChange={e => setFormData(d => ({ ...d, sitemapUrl: e.target.value }))}
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground/50 font-medium px-1">URLs will be extracted and saved as internal links</p>
                                 </div>
                             </div>
 
