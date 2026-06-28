@@ -85,17 +85,16 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
 
             // Parse sitemap if provided
             let sitemapLinks = []
-            if (formData.sitemapUrl?.trim()) {
+            if (formData.sitemapFile) {
                 try {
-                    addStatus('Fetching sitemap…', 'info')
-                    const res = await fetch(formData.sitemapUrl.trim())
-                    const xml = await res.text()
+                    addStatus('Parsing sitemap file…', 'info')
+                    const xml = await formData.sitemapFile.text()
                     const doc = new DOMParser().parseFromString(xml, 'application/xml')
                     const locs = Array.from(doc.querySelectorAll('loc')).map(el => el.textContent.trim())
                     sitemapLinks = locs
                     addStatus(`Sitemap parsed — ${locs.length} URL(s) extracted`, 'success')
                 } catch (sitemapErr) {
-                    addStatus('Sitemap fetch failed (will retry server-side)', 'warn')
+                    addStatus('Sitemap parse failed', 'warn')
                     console.warn('Sitemap parse error:', sitemapErr)
                 }
             }
@@ -154,7 +153,6 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                 params.append('title', blogData.title)
                 params.append('companyName', blogData.company_name)
                 params.append('companyUrl', blogData.company_url)
-                if (formData.sitemapUrl?.trim()) params.append('sitemapUrl', formData.sitemapUrl.trim())
                 if (sitemapLinks.length > 0) params.append('internalLinkCount', sitemapLinks.length)
                 blogData.file_names.forEach(name => params.append('fileNames[]', name))
                 storagePaths.forEach(path => params.append('storagePaths[]', path))

@@ -15,7 +15,7 @@ export default function SEOPipeline({ onGenerate, loading }) {
         companyName: '',
         companyFiles: [],
         companyUrl: '',
-        sitemapUrl: '',
+        sitemapFile: null,
     })
     const [fileError, setFileError] = useState('')
 
@@ -49,7 +49,7 @@ export default function SEOPipeline({ onGenerate, loading }) {
             title: formData.title,
             companyName: formData.companyName,
             companyUrl: formData.companyUrl,
-            sitemapUrl: formData.sitemapUrl,
+            sitemapFile: formData.sitemapFile,
             companyFiles: formData.companyFiles,
             timestamp: new Date().toISOString(),
         }
@@ -127,16 +127,37 @@ export default function SEOPipeline({ onGenerate, loading }) {
                                     </div>
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground ml-1">Sitemap URL <span className="normal-case font-medium opacity-50">(.xml)</span></label>
-                                    <div className="relative">
-                                        <BookOpen size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+                                    <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground ml-1">Sitemap File <span className="normal-case font-medium opacity-50">(.xml)</span></label>
+                                    <label className={cn(
+                                        "flex items-center gap-3 h-11 px-4 rounded-xl border cursor-pointer transition-all",
+                                        formData.sitemapFile
+                                            ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400"
+                                            : "bg-muted/20 border-border/50 hover:border-primary/30 hover:bg-muted/30"
+                                    )}>
+                                        <BookOpen size={14} className="shrink-0 opacity-60" />
+                                        <span className="text-sm font-semibold truncate flex-1">
+                                            {formData.sitemapFile ? formData.sitemapFile.name : 'Upload sitemap.xml…'}
+                                        </span>
+                                        {formData.sitemapFile && (
+                                            <button
+                                                type="button"
+                                                onClick={e => { e.preventDefault(); setFormData(d => ({ ...d, sitemapFile: null })) }}
+                                                className="p-0.5 hover:bg-muted rounded transition-colors"
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        )}
                                         <input
-                                            className="w-full bg-muted/20 border-border/50 rounded-xl h-11 pl-10 pr-4 text-sm font-semibold focus:ring-1 focus:ring-primary/20 transition-all"
-                                            placeholder="https://example.com/sitemap.xml"
-                                            value={formData.sitemapUrl}
-                                            onChange={e => setFormData(d => ({ ...d, sitemapUrl: e.target.value }))}
+                                            type="file"
+                                            accept=".xml,application/xml,text/xml"
+                                            className="hidden"
+                                            onChange={e => {
+                                                const file = e.target.files?.[0] || null
+                                                setFormData(d => ({ ...d, sitemapFile: file }))
+                                                e.target.value = ''
+                                            }}
                                         />
-                                    </div>
+                                    </label>
                                     <p className="text-[10px] text-muted-foreground/50 font-medium px-1">URLs will be extracted and saved as internal links</p>
                                 </div>
                             </div>
