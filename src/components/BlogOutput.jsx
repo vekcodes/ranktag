@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
-    Copy, Download, CheckCircle,
-    BarChart3, Clock, Hash, TrendingUp, Zap, ChevronDown, ChevronUp, Share2, FileText, Sparkles
+    Copy, Download, CheckCircle, AlertTriangle,
+    Clock, Hash, TrendingUp, Zap, Share2, FileText, Sparkles, ChevronDown, ChevronUp, Link2
 } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -12,24 +12,41 @@ import { cn } from "@/lib/utils"
 
 export default function BlogOutput({ blog }) {
     const [copied, setCopied] = useState(false)
-    const [showScore, setShowScore] = useState(true)
+    const [faqOpen, setFaqOpen] = useState({})
 
-    const seoScore = blog.seo_score ?? blog.seoScore ?? 0
-    const readTime = blog.read_time ?? blog.readTime ?? 0
-    const wordCount = blog.word_count ?? blog.wordCount ?? 0
+    const seoScore = blog.seo_score ?? 0
+    const qaScore = blog.qa_score ?? null
+    const plagiarismScore = blog.plagiarism_score ?? null
+    const readTime = blog.read_time ?? null
+    const wordCount = blog.word_count ?? 0
+
+    const faq = (() => { try { return blog.faq ? JSON.parse(blog.faq) : [] } catch { return [] } })()
+    const keyTakeaways = (() => { try { return blog.key_takeaways ? JSON.parse(blog.key_takeaways) : [] } catch { return [] } })()
+
+    useEffect(() => {
+        if (!blog.schema_jsonld) return
+        const existing = document.getElementById('blog-schema-jsonld')
+        if (existing) existing.remove()
+        const script = document.createElement('script')
+        script.id = 'blog-schema-jsonld'
+        script.type = 'application/ld+json'
+        script.text = blog.schema_jsonld
+        document.head.appendChild(script)
+        return () => { document.getElementById('blog-schema-jsonld')?.remove() }
+    }, [blog.schema_jsonld])
 
     const handleCopy = async () => {
-        await navigator.clipboard.writeText(blog.content)
+        await navigator.clipboard.writeText(blog.content || '')
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
     }
 
     const handleDownload = () => {
-        const blob = new Blob([blog.content], { type: 'text/markdown' })
+        const blob = new Blob([blog.content || ''], { type: 'text/markdown' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `${blog.title.slice(0, 40).replace(/[^a-z0-9]/gi, '-').toLowerCase()}.md`
+        a.download = `${(blog.title || 'article').slice(0, 40).replace(/[^a-z0-9]/gi, '-').toLowerCase()}.md`
         a.click()
         URL.revokeObjectURL(url)
     }
@@ -42,6 +59,13 @@ export default function BlogOutput({ blog }) {
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {blog.status === 'complete_with_warnings' && (
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-xs font-semibold">
+                    <AlertTriangle size={14} className="shrink-0" />
+                    Article generated with minor QA warnings. Review before publishing.
+                </div>
+            )}
+
             {/* Success Header */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-dashed">
                 <div className="space-y-4">
@@ -83,7 +107,7 @@ export default function BlogOutput({ blog }) {
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                 {/* Left: Content Area */}
                 <div className="lg:col-span-8 space-y-8">
-                    <Card className="p-8 md:p-12 bento-card border-primary/5 shadow-2xl shadow-primary/5 min-h-[600px] bg-card/50">
+                    <Card className="p-8 md:p-12 bento-card border-primary/5 shadow-2xl shadow-primary/5 min-h-[600px] bg-card/50" id="article-content">
                         <div className="flex items-center gap-1.5 mb-8 text-[11px] font-bold text-muted-foreground/50 uppercase tracking-[0.3em]">
                             <FileText size={12} />
                             Semantic Composition
@@ -202,6 +226,33 @@ export default function BlogOutput({ blog }) {
                             </ReactMarkdown>
                         </div>
                     </Card>
+
+                    {/* FAQ Section */}
+                    {faq.length > 0 && (
+                        <Card className="p-8 bento-card border-primary/5 bg-card/50">
+                            <h3 className="text-lg font-extrabold tracking-tight text-foreground mb-6 pb-4 border-b border-dashed">
+                                Frequently Asked Questions
+                            </h3>
+                            <div className="space-y-3">
+                                {faq.map((item, i) => (
+                                    <div key={i} className="rounded-xl border border-border/50 overflow-hidden">
+                                        <button
+                                            className="w-full flex items-center justify-between px-5 py-4 text-left text-sm font-bold text-foreground hover:bg-muted/20 transition-colors"
+                                            onClick={() => setFaqOpen(p => ({ ...p, [i]: !p[i] }))}
+                                        >
+                                            <span className="pr-4">{item.question}</span>
+                                            {faqOpen[i] ? <ChevronUp size={14} className="shrink-0 text-primary" /> : <ChevronDown size={14} className="shrink-0 text-muted-foreground/50" />}
+                                        </button>
+                                        {faqOpen[i] && (
+                                            <div className="px-5 pb-4 text-sm font-medium text-muted-foreground leading-relaxed border-t border-border/30 pt-3">
+                                                {item.answer}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </Card>
+                    )}
                 </div>
 
                 {/* Right: Intelligence Panel */}
@@ -229,13 +280,15 @@ export default function BlogOutput({ blog }) {
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 mt-8 pt-6 border-t border-dashed">
-                            <div className="space-y-1">
-                                <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest block">Read Time</span>
-                                <span className="text-sm font-bold flex items-center gap-2">
-                                    <Clock size={12} className="text-primary" />
-                                    {readTime} Min
-                                </span>
-                            </div>
+                            {readTime != null && (
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest block">Read Time</span>
+                                    <span className="text-sm font-bold flex items-center gap-2">
+                                        <Clock size={12} className="text-primary" />
+                                        {readTime} Min
+                                    </span>
+                                </div>
+                            )}
                             <div className="space-y-1 text-right">
                                 <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest block">Word Count</span>
                                 <span className="text-sm font-bold flex items-center justify-end gap-2">
@@ -244,6 +297,23 @@ export default function BlogOutput({ blog }) {
                                 </span>
                             </div>
                         </div>
+
+                        {(qaScore != null || plagiarismScore != null) && (
+                            <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-dashed">
+                                {qaScore != null && (
+                                    <div className="space-y-1">
+                                        <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest block">QA Score</span>
+                                        <span className={cn("text-sm font-bold", getScoreColor(qaScore))}>{qaScore}%</span>
+                                    </div>
+                                )}
+                                {plagiarismScore != null && (
+                                    <div className="space-y-1 text-right">
+                                        <span className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest block">Originality</span>
+                                        <span className={cn("text-sm font-bold", getScoreColor(100 - plagiarismScore))}>{(100 - plagiarismScore).toFixed(0)}%</span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </Card>
 
                     {/* Keywords Card */}
@@ -260,6 +330,49 @@ export default function BlogOutput({ blog }) {
                             )) : <span className="text-[10px] text-muted-foreground/60 italic font-medium">No keywords provided</span>}
                         </div>
                     </Card>
+
+                    {/* Meta Panel */}
+                    {(blog.meta_title || blog.meta_description || blog.slug) && (
+                        <Card className="p-6 bento-card border-muted/50 space-y-4">
+                            <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">SEO Meta</h4>
+                            {blog.meta_title && (
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Meta Title</span>
+                                    <p className="text-xs font-semibold text-foreground leading-relaxed">{blog.meta_title}</p>
+                                </div>
+                            )}
+                            {blog.meta_description && (
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Meta Description</span>
+                                    <p className="text-xs font-medium text-muted-foreground leading-relaxed">{blog.meta_description}</p>
+                                </div>
+                            )}
+                            {blog.slug && (
+                                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border/40">
+                                    <Link2 size={11} className="text-primary shrink-0" />
+                                    <span className="text-[11px] font-mono text-muted-foreground truncate">/{blog.slug}</span>
+                                </div>
+                            )}
+                        </Card>
+                    )}
+
+                    {/* Key Takeaways */}
+                    {keyTakeaways.length > 0 && (
+                        <Card className="p-6 bento-card border-muted/50">
+                            <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Key Takeaways</h4>
+                                <Zap size={14} className="text-primary/40" />
+                            </div>
+                            <ul className="space-y-2">
+                                {keyTakeaways.map((item, i) => (
+                                    <li key={i} className="flex items-start gap-2 text-[11px] font-medium text-muted-foreground leading-relaxed">
+                                        <span className="mt-1 w-1.5 h-1.5 rounded-full bg-primary/60 shrink-0" />
+                                        {typeof item === 'string' ? item : item.text || JSON.stringify(item)}
+                                    </li>
+                                ))}
+                            </ul>
+                        </Card>
+                    )}
 
                     {/* SEO Intelligence Card */}
                     {(blog.most_searched_query || (blog.most_searched_questions && blog.most_searched_questions.length > 0) || (blog.top3_ranked_websites && blog.top3_ranked_websites.length > 0) || blog.research_paper) && (

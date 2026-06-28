@@ -38,8 +38,7 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
 
             if (error && error.code !== 'PGRST116') throw error
 
-            // Only set the blog if it's ready from AI
-            if (data && data.content_from_ai) {
+            if (data && (data.status === 'complete' || data.status === 'complete_with_warnings')) {
                 setGeneratedBlog(data)
             } else {
                 setGeneratedBlog(null)
@@ -61,69 +60,25 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
         try {
             addStatus('Connected to Supabase', 'success')
 
-            const storagePaths = []
-            if (formData.companyFiles.length > 0) {
-                addStatus(`Uploading ${formData.companyFiles.length} file(s) to Storage...`, 'info')
-            }
-            for (const file of formData.companyFiles) {
-                const fileExt = file.name.split('.').pop()
-                const fileName = `${Math.random()}.${fileExt}`
-                const filePath = `${activeSession}/${fileName}`
+            const { data: { user } } = await supabase.auth.getUser()
+            const userId = user?.id || activeSession
 
-                const { data: uploadData, error: uploadError } = await supabase.storage
-                    .from('company-docs')
-                    .upload(filePath, file)
-
-                if (uploadError) {
-                    addStatus(`Upload failed: ${file.name}`, 'error')
-                    uploadError.storageError = true
-                    throw uploadError
-                }
-                addStatus(`Uploaded: ${file.name}`, 'success')
-                storagePaths.push(uploadData.path)
-            }
-
-            // Parse sitemap if provided
-            let sitemapLinks = []
-            if (formData.sitemapFile) {
-                try {
-                    addStatus('Parsing sitemap file…', 'info')
-                    const xml = await formData.sitemapFile.text()
-                    const doc = new DOMParser().parseFromString(xml, 'application/xml')
-                    const locs = Array.from(doc.querySelectorAll('loc')).map(el => el.textContent.trim())
-                    sitemapLinks = locs
-                    addStatus(`Sitemap parsed — ${locs.length} URL(s) extracted`, 'success')
-                } catch (sitemapErr) {
-                    addStatus('Sitemap parse failed', 'warn')
-                    console.warn('Sitemap parse error:', sitemapErr)
-                }
-            }
-
-            const newBlogInput = {
-                session_id: activeSession,
-                title: formData.title,
-                project: formData.title, // Add project column
-                content: generateMockBlog(formData),
-                company_name: formData.companyName,
-                company_url: formData.companyUrl,
-                file_names: formData.companyFiles.map(f => f.name),
-                storage_paths: storagePaths,
-                seo_score: Math.floor(Math.random() * 15) + 82,
-                keywords: ['SEO', 'content marketing', 'digital strategy', 'organic traffic'],
-                read_time: Math.floor(Math.random() * 5) + 5,
-                word_count: Math.floor(Math.random() * 500) + 1200,
-                most_searched_query: null,
-                most_searched_questions: [],
-                top3_ranked_websites: [],
-                research_paper: null,
-                internal_links: sitemapLinks.length > 0 ? JSON.stringify(sitemapLinks) : null,
-                internal_link_count: sitemapLinks.length > 0 ? sitemapLinks.length : null,
-            }
-
+            // STEP 1: Insert blogs row
+            const blogId = crypto.randomUUID()
             addStatus('Creating blog record in database...', 'info')
             const { data: blogData, error: blogError } = await supabase
                 .from('blogs')
-                .insert([newBlogInput])
+                .insert([{
+                    id: blogId,
+                    title: formData.title,
+                    content: '',
+                    status: 'pending',
+                    company_name: formData.companyName,
+                    company_url: formData.companyUrl,
+                    company_desc: formData.companyDesc,
+                    session_id: activeSession,
+                    project: formData.title,
+                }])
                 .select()
                 .single()
 
@@ -132,74 +87,126 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                 blogError.dbError = true
                 throw blogError
             }
-            addStatus(`Blog row created (ID: ${blogData.id.slice(0, 8)}…)`, 'success')
+            addStatus(`Blog row created (ID: ${blogId.slice(0, 8)}…)`, 'success')
+
+            // STEP 2: Upload files to Supabase Storage then UPDATE blogs row
+            const storagePaths = []
+            const fileNames = []
+            if (formData.companyFiles.length > 0) {
+                addStatus(`Uploading ${formData.companyFiles.length} file(s) to Storage...`, 'info')
+                for (let i = 0; i < formData.companyFiles.length; i++) {
+                    const file = formData.companyFiles[i]
+                    const fileExt = file.name.split('.').pop()
+                    const filePath = `${userId}/${blogId}${formData.companyFiles.length > 1 ? `-${i}` : ''}.${fileExt}`
+
+                    const { data: uploadData, error: uploadError } = await supabase.storage
+                        .from('company-docs')
+                        .upload(filePath, file)
+
+                    if (uploadError) {
+                        addStatus(`Upload failed: ${file.name}`, 'error')
+                        uploadError.storageError = true
+                        throw uploadError
+                    }
+                    addStatus(`Uploaded: ${file.name}`, 'success')
+                    storagePaths.push(uploadData.path)
+                    fileNames.push(file.name)
+                }
+
+                await supabase
+                    .from('blogs')
+                    .update({ storage_paths: storagePaths, file_names: fileNames })
+                    .eq('id', blogId)
+            }
+
+            // STEP 3: Parse sitemap and UPDATE internal_links
+            if (formData.sitemapFile) {
+                try {
+                    addStatus('Parsing sitemap file…', 'info')
+                    const xml = await formData.sitemapFile.text()
+                    const doc = new DOMParser().parseFromString(xml, 'application/xml')
+                    const links = Array.from(doc.querySelectorAll('loc')).map(el => ({ url: el.textContent.trim() }))
+                    addStatus(`Sitemap parsed — ${links.length} URL(s) extracted`, 'success')
+
+                    await supabase
+                        .from('blogs')
+                        .update({ internal_links: JSON.stringify(links) })
+                        .eq('id', blogId)
+                } catch (sitemapErr) {
+                    addStatus('Sitemap parse failed — n8n will scrape automatically', 'warn')
+                    console.warn('Sitemap parse error:', sitemapErr)
+                }
+            }
 
             await supabase
                 .from('sessions')
-                .update({
-                    status: 'complete',
-                    title: formData.title
-                })
+                .update({ status: 'processing', title: formData.title })
                 .eq('id', activeSession)
 
             if (onSessionUpdate) {
-                onSessionUpdate(activeSession, { status: 'complete', title: formData.title })
+                onSessionUpdate(activeSession, { status: 'processing', title: formData.title })
             }
 
+            // STEP 4: POST webhook
+            addStatus('Firing webhook to AI pipeline...', 'info')
+            let webhookOk = true
             try {
-                addStatus('Firing webhook to AI pipeline...', 'info')
-                const params = new URLSearchParams()
-                params.append('id', blogData.id)
-                params.append('title', blogData.title)
-                params.append('companyName', blogData.company_name)
-                params.append('companyUrl', blogData.company_url)
-                if (sitemapLinks.length > 0) params.append('internalLinkCount', sitemapLinks.length)
-                blogData.file_names.forEach(name => params.append('fileNames[]', name))
-                storagePaths.forEach(path => params.append('storagePaths[]', path))
-
-                await fetch(`${WEBHOOK_URL}?${params.toString()}`, {
-                    method: 'GET',
-                    mode: 'no-cors',
+                const webhookRes = await fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query: {
+                            id: blogId,
+                            storagePaths,
+                            companyName: formData.companyName,
+                            companyUrl: formData.companyUrl,
+                            companyId: userId,
+                        }
+                    }),
                 })
-                addStatus('Webhook fired — AI is generating content', 'success')
+                const webhookJson = await webhookRes.json().catch(() => null)
+                if (webhookJson && webhookJson.ok === false) {
+                    const errMsg = webhookJson.error?.message || 'Webhook returned ok: false'
+                    addStatus(`Webhook error: ${errMsg}`, 'error')
+                    throw new Error(errMsg)
+                }
+                addStatus('Webhook accepted — AI generation has started', 'success')
             } catch (webhookErr) {
-                addStatus('Webhook call failed (non-fatal)', 'warn')
+                webhookOk = false
+                if (webhookErr.message?.includes('ok: false') || webhookErr.message?.includes('Webhook error')) {
+                    throw webhookErr
+                }
+                addStatus('Webhook call failed (non-fatal — check n8n CORS)', 'warn')
                 console.error('Webhook trigger failed:', webhookErr)
             }
 
-            // Polling logic: Wait for AI to complete (no timeout — runs until content_from_ai is true)
-            let isReady = false
-            let pollingAttempts = 0
+            if (!webhookOk) return
 
-            const aiProgressMessages = [
-                { text: 'AI is reading your sources…', type: 'info' },
-                { text: 'Researching top-ranking pages for this topic…', type: 'info' },
-                { text: 'Analyzing SERP results and competitors…', type: 'info' },
-                { text: 'Identifying high-value keywords…', type: 'info' },
-                { text: 'Mapping semantic clusters and topic gaps…', type: 'info' },
-                { text: 'Crafting the blog outline…', type: 'info' },
-                { text: 'Writing the introduction…', type: 'info' },
-                { text: 'Expanding each section with depth…', type: 'info' },
-                { text: 'Weaving in LSI keywords naturally…', type: 'info' },
-                { text: 'Optimizing heading structure for SEO…', type: 'info' },
-                { text: 'Adding supporting facts and statistics…', type: 'info' },
-                { text: 'Writing the conclusion and CTA…', type: 'info' },
-                { text: 'Running quality and readability checks…', type: 'info' },
-                { text: 'Fine-tuning tone and brand voice…', type: 'info' },
-                { text: 'Almost there — finalizing the content…', type: 'info' },
-                { text: 'Still working — great content takes time…', type: 'info' },
-            ]
+            // STEP 5: Poll every 5s, 10-minute timeout
+            const STATUS_LABELS = {
+                pending: 'Starting generation...',
+                outlining: 'Researching and building outline...',
+                writing: 'Writing article...',
+            }
+            const DONE = new Set(['complete', 'complete_with_warnings', 'failed'])
+            const TIMEOUT_MS = 10 * 60 * 1000
+            const startTime = Date.now()
 
             addStatus('AI has started working on your blog…', 'info')
 
+            let isReady = false
             while (!isReady) {
-                pollingAttempts++
-                await new Promise(resolve => setTimeout(resolve, 10000)) // check every 10s
+                if (Date.now() - startTime > TIMEOUT_MS) {
+                    addStatus('Generation is taking longer than expected. Check back later.', 'warn')
+                    break
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 5000))
 
                 const { data: pollData, error: pollError } = await supabase
                     .from('blogs')
                     .select('*')
-                    .eq('id', blogData.id)
+                    .eq('id', blogId)
                     .single()
 
                 if (pollError) {
@@ -207,15 +214,24 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                     continue
                 }
 
-                if (pollData.content_from_ai) {
+                const currentStatus = pollData.status
+
+                if (currentStatus === 'complete' || currentStatus === 'complete_with_warnings') {
                     isReady = true
+                    if (currentStatus === 'complete_with_warnings') {
+                        addStatus('Article generated with minor QA warnings', 'warn')
+                    }
                     addStatus('Blog content is ready!', 'success')
                     setGeneratedBlog(pollData)
+                } else if (currentStatus === 'failed') {
+                    isReady = true
+                    const errMsg = pollData.error_message || 'Generation failed. Please try again.'
+                    addStatus(`Generation failed: ${errMsg}`, 'error')
+                    throw new Error(errMsg)
+                } else if (DONE.has(currentStatus)) {
+                    isReady = true
                 } else {
-                    // Show a rotating human-friendly message
-                    const msgIndex = (pollingAttempts - 1) % aiProgressMessages.length
-                    const msg = aiProgressMessages[msgIndex]
-                    addStatus(msg.text, msg.type)
+                    addStatus(STATUS_LABELS[currentStatus] || `Status: ${currentStatus}`, 'info')
                 }
             }
 
@@ -226,7 +242,7 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
                 addStatus(`Storage error: ${errorMsg}`, 'error')
             } else if (err.dbError) {
                 addStatus(`Database error: ${errorMsg}`, 'error')
-            } else {
+            } else if (!err.storageError && !err.dbError) {
                 addStatus(`Something went wrong: ${errorMsg}`, 'error')
             }
         } finally {
@@ -450,6 +466,3 @@ function GeneratingView({ statusLog = [] }) {
     )
 }
 
-function generateMockBlog({ title, companyName }) {
-    return `# ${title}\n\n## Introduction\n\nRanktag provides a strategic edge in the evolving SEO landscape. ${companyName ? `At ${companyName}, we leverage` : 'Our platform leverages'} advanced semantic mapping...`
-}

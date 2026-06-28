@@ -13,6 +13,7 @@ export default function SEOPipeline({ onGenerate, loading }) {
     const [formData, setFormData] = useState({
         title: '',
         companyName: '',
+        companyDesc: '',
         companyFiles: [],
         companyUrl: '',
         sitemapFile: null,
@@ -48,6 +49,7 @@ export default function SEOPipeline({ onGenerate, loading }) {
         const payload = {
             title: formData.title,
             companyName: formData.companyName,
+            companyDesc: formData.companyDesc,
             companyUrl: formData.companyUrl,
             sitemapFile: formData.sitemapFile,
             companyFiles: formData.companyFiles,
@@ -112,6 +114,16 @@ export default function SEOPipeline({ onGenerate, loading }) {
                                         placeholder="e.g. Acme Intelligence"
                                         value={formData.companyName}
                                         onChange={e => setFormData(d => ({ ...d, companyName: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground ml-1">Company Description <span className="normal-case font-medium opacity-50">(optional)</span></label>
+                                    <textarea
+                                        className="w-full bg-muted/20 border-border/50 rounded-xl px-4 py-3 text-sm font-semibold focus:ring-1 focus:ring-primary/20 transition-all resize-none"
+                                        rows={2}
+                                        placeholder="Brief description of what the company does..."
+                                        value={formData.companyDesc}
+                                        onChange={e => setFormData(d => ({ ...d, companyDesc: e.target.value }))}
                                     />
                                 </div>
                                 <div className="space-y-2">
