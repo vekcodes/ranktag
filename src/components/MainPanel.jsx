@@ -149,38 +149,50 @@ export default function MainPanel({ sidebarOpen, onToggleSidebar, activeSession,
 
             // STEP 4: POST webhook
             addStatus('Firing webhook to AI pipeline...', 'info')
-            let webhookOk = true
+            const webhookBody = JSON.stringify({
+                query: {
+                    id: blogId,
+                    storagePaths,
+                    companyName: formData.companyName,
+                    companyUrl: formData.companyUrl,
+                    companyId: userId,
+                }
+            })
+
             try {
-                const webhookRes = await fetch(WEBHOOK_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        query: {
-                            id: blogId,
-                            storagePaths,
-                            companyName: formData.companyName,
-                            companyUrl: formData.companyUrl,
-                            companyId: userId,
-                        }
-                    }),
-                })
-                const webhookJson = await webhookRes.json().catch(() => null)
-                if (webhookJson && webhookJson.ok === false) {
-                    const errMsg = webhookJson.error?.message || 'Webhook returned ok: false'
+                let webhookJson = null
+                try {
+                    const webhookRes = await fetch(WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: webhookBody,
+                    })
+                    webhookJson = await webhookRes.json().catch(() => null)
+                } catch (corsErr) {
+                    // CORS preflight blocked — fall back to no-cors (no response reading, but request goes through)
+                    addStatus('CORS detected — retrying without preflight...', 'warn')
+                    await fetch(WEBHOOK_URL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        body: webhookBody,
+                    }).catch(e => console.warn('Webhook no-cors fallback failed:', e))
+                }
+
+                if (webhookJson?.ok === false) {
+                    const errMsg = webhookJson.error?.message || webhookJson.error || 'Webhook rejected the request'
                     addStatus(`Webhook error: ${errMsg}`, 'error')
                     throw new Error(errMsg)
                 }
-                addStatus('Webhook accepted — AI generation has started', 'success')
+
+                addStatus('Webhook fired — AI generation has started', 'success')
             } catch (webhookErr) {
-                webhookOk = false
-                if (webhookErr.message?.includes('ok: false') || webhookErr.message?.includes('Webhook error')) {
+                if (!webhookErr.message?.startsWith('Webhook')) {
+                    addStatus('Webhook call failed — check n8n is reachable', 'warn')
+                    console.error('Webhook trigger failed:', webhookErr)
+                } else {
                     throw webhookErr
                 }
-                addStatus('Webhook call failed (non-fatal — check n8n CORS)', 'warn')
-                console.error('Webhook trigger failed:', webhookErr)
             }
-
-            if (!webhookOk) return
 
             // STEP 5: Poll every 5s, 10-minute timeout
             const STATUS_LABELS = {
